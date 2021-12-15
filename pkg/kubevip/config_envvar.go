@@ -47,6 +47,12 @@ const (
 	//port - defines the port for the VIP
 	port = "port"
 
+	// The API server backend CIDR (default to 0.0.0.0/0)
+	vipBackendCIDR = "vip_backend_cidr"
+
+	// The API server backend port (default to 6443)
+	vipBackendPort = "vip_backend_port"
+
 	// annotations
 	annotations = "annotation"
 

@@ -4,6 +4,7 @@ go 1.14
 
 require (
 	github.com/cloudflare/ipvs v0.0.0-20210114211356-96b2597859b3
+	github.com/coreos/go-iptables v0.4.5
 	github.com/davecgh/go-spew v1.1.1
 	github.com/ghodss/yaml v1.0.0
 	github.com/golang/protobuf v1.5.2

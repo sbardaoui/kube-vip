@@ -5,9 +5,12 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
+	"github.com/coreos/go-iptables/iptables"
 	"github.com/kube-vip/kube-vip/pkg/bgp"
 	"github.com/kube-vip/kube-vip/pkg/kubevip"
 	"github.com/kube-vip/kube-vip/pkg/loadbalancer"
@@ -32,6 +35,10 @@ func (cluster *Cluster) vipService(ctxArp, ctxDNS context.Context, c *kubevip.Co
 
 	// Add Notification for SIGTERM (sent from Kubernetes)
 	signal.Notify(signalChan, syscall.SIGTERM)
+
+	if err := cluster.setupBackendForwarding(c); err != nil {
+		log.Error(err)
+	}
 
 	if cluster.Network.IsDDNS() {
 		if err := cluster.StartDDNS(ctxDNS); err != nil {
@@ -78,13 +85,13 @@ func (cluster *Cluster) vipService(ctxArp, ctxDNS context.Context, c *kubevip.Co
 
 		log.Infof("Starting IPVS LoadBalancer")
 
-		lb, err := loadbalancer.NewIPVSLB(cluster.Network.IP(), c.LoadBalancerPort, c.LoadBalancerForwardingMethod)
+		lb, err := loadbalancer.NewIPVSLB(cluster.Network.IP(), c.Port, c.LoadBalancerForwardingMethod)
 		if err != nil {
 			log.Errorf("Error creating IPVS LoadBalancer [%s]", err)
 		}
 
 		go func() {
-			err = sm.NodeWatcher(lb, c.Port)
+			err = sm.NodeWatcher(lb, c.BackendPort)
 			if err != nil {
 				log.Errorf("Error watching node labels [%s]", err)
 			}
@@ -267,5 +274,172 @@ func (cluster *Cluster) StartLoadBalancerService(c *kubevip.Config, bgp *bgp.Ser
 		}
 	}()
 	log.Infoln("Started Load Balancer and Virtual IP")
+	return nil
+}
+
+func (cluster *Cluster) setupBackendForwarding(c *kubevip.Config) error {
+	// If CIDR is quad-zero route, early return (destination address is unknown, can't setup forwarding).
+	// If at some point we want to prepare forwarding none the less we would have to pick up any interface
+	// address and continue with it. If the user want to profit from different vip port and backend port
+	// it's probably easier the user define the backend cidr instead
+	if c.BackendCIDR == "0.0.0.0/0" {
+		return nil
+	}
+	if c.EnableLoadBalancer {
+		return cluster.setupIPVSForwarding(c.Address, c.Port, c.BackendCIDR, c.BackendPort, c.LoadBalancerForwardingMethod)
+	}
+	cluster.setupIPTablesForwarding(c.Address, c.Port, c.BackendCIDR, c.BackendPort)
+	return nil
+}
+
+func (cluster *Cluster) setupIPVSForwarding(srcAddress string, srcPort int, destAddress string, destPort int, forwardingMethod string) error {
+	lb, err := loadbalancer.NewIPVSLB(srcAddress, srcPort, forwardingMethod)
+	if err != nil {
+		return err
+	}
+	return lb.AddBackend(destAddress, destPort)
+}
+
+func (cluster *Cluster) setupIPTablesForwarding(srcAddress string, srcPort int, destAddress string, destPort int) {
+	random := false
+	ipt, err := iptables.New()
+	if err == nil {
+		random = ipt.HasRandomFully()
+	}
+
+	rr := []IPTablesRule{
+		{"nat", "PREROUTING", []string{"-d", srcAddress, "-p", "tcp", "-m", "tcp", "--dport", strconv.Itoa(srcPort), "-j", "DNAT", "--to-destination", destAddress + ":" + strconv.Itoa(destPort)}},
+		{"nat", "POSTROUTING", []string{"-d", destAddress, "-p", "tcp", "-m", "tcp", "--dport", strconv.Itoa(destPort), "-j", "MASQUERADE"}},
+		{"nat", "OUTPUT", []string{"-d", srcAddress, "-p", "tcp", "-m", "tcp", "--dport", strconv.Itoa(srcPort), "-j", "DNAT", "--to-destination", destAddress + ":" + strconv.Itoa(destPort)}},
+	}
+
+	if random {
+		rr = []IPTablesRule{
+			{"nat", "PREROUTING", []string{"-d", srcAddress, "-p", "tcp", "-m", "tcp", "--dport", strconv.Itoa(srcPort), "-j", "DNAT", "--to-destination", destAddress + ":" + strconv.Itoa(destPort), "--random"}},
+			{"nat", "POSTROUTING", []string{"-d", destAddress, "-p", "tcp", "-m", "tcp", "--dport", strconv.Itoa(destPort), "-j", "MASQUERADE", "--random-fully"}},
+			{"nat", "OUTPUT", []string{"-d", srcAddress, "-p", "tcp", "-m", "tcp", "--dport", strconv.Itoa(srcPort), "-j", "DNAT", "--to-destination", destAddress + ":" + strconv.Itoa(destPort), "--random"}},
+		}
+	}
+
+	SetupAndEnsureIPTables(rr, 5)
+}
+
+// for convenience only; should be isolated in some iptables package
+// proudly found elsewhere: https://github.com/flannel-io/flannel/blob/master/network/iptables.go
+
+type IPTables interface {
+	AppendUnique(table string, chain string, rulespec ...string) error
+	Delete(table string, chain string, rulespec ...string) error
+	Exists(table string, chain string, rulespec ...string) (bool, error)
+}
+
+type IPTablesError interface {
+	IsNotExist() bool
+	Error() string
+}
+
+type IPTablesRule struct {
+	table    string
+	chain    string
+	rulespec []string
+}
+
+func ipTablesRulesExist(ipt IPTables, rules []IPTablesRule) (bool, error) {
+	for _, rule := range rules {
+		exists, err := ipt.Exists(rule.table, rule.chain, rule.rulespec...)
+		if err != nil {
+			// this shouldn't ever happen
+			return false, fmt.Errorf("failed to check rule existence: %v", err)
+		}
+		if !exists {
+			return false, nil
+		}
+	}
+
+	return true, nil
+}
+
+func SetupAndEnsureIPTables(rules []IPTablesRule, resyncPeriod int) {
+	ipt, err := iptables.New()
+	if err != nil {
+		// if we can't find iptables, give up and return
+		log.Errorf("Failed to setup IPTables. iptables binary was not found: %v", err)
+		return
+	}
+
+	defer func() {
+		teardownIPTables(ipt, rules)
+	}()
+
+	for {
+		// Ensure that all the iptables rules exist every 5 seconds
+		if err := ensureIPTables(ipt, rules); err != nil {
+			log.Errorf("Failed to ensure iptables rules: %v", err)
+		}
+		time.Sleep(time.Duration(resyncPeriod) * time.Second)
+	}
+}
+
+// DeleteIPTables delete specified iptables rules
+func DeleteIPTables(rules []IPTablesRule) error {
+	ipt, err := iptables.New()
+	if err != nil {
+		// if we can't find iptables, give up and return
+		log.Errorf("Failed to setup IPTables. iptables binary was not found: %v", err)
+		return err
+	}
+	teardownIPTables(ipt, rules)
+	return nil
+}
+
+func ensureIPTables(ipt IPTables, rules []IPTablesRule) error {
+	exists, err := ipTablesRulesExist(ipt, rules)
+	if err != nil {
+		return fmt.Errorf("Error checking rule existence: %v", err)
+	}
+	if exists {
+		// if all the rules already exist, no need to do anything
+		return nil
+	}
+	// Otherwise, teardown all the rules and set them up again
+	// We do this because the order of the rules is important
+	log.Info("Some iptables rules are missing; deleting and recreating rules")
+	if err = teardownIPTables(ipt, rules); err != nil {
+		return fmt.Errorf("Error tearing down rules: %v", err)
+	}
+	if err = setupIPTables(ipt, rules); err != nil {
+		return fmt.Errorf("Error setting up rules: %v", err)
+	}
+	return nil
+}
+
+func setupIPTables(ipt IPTables, rules []IPTablesRule) error {
+	for _, rule := range rules {
+		log.Info("Adding iptables rule: ", strings.Join(rule.rulespec, " "))
+		err := ipt.AppendUnique(rule.table, rule.chain, rule.rulespec...)
+		if err != nil {
+			return fmt.Errorf("failed to insert IPTables rule: %v", err)
+		}
+	}
+	return nil
+}
+
+func teardownIPTables(ipt IPTables, rules []IPTablesRule) error {
+	for _, rule := range rules {
+		log.Info("Deleting iptables rule: ", strings.Join(rule.rulespec, " "))
+		err := ipt.Delete(rule.table, rule.chain, rule.rulespec...)
+		if err != nil {
+			e := err.(IPTablesError)
+			// If this error is because the rule is already deleted, the message from iptables will be
+			// "Bad rule (does a matching rule exist in that chain?)". These are safe to ignore.
+			// However other errors (like EAGAIN caused by other things not respecting the xtables.lock)
+			// should halt the ensure process.  Otherwise rules can get out of order when a rule we think
+			// is deleted is actually still in the chain.
+			// This will leave the rules incomplete until the next successful reconciliation loop.
+			if !e.IsNotExist() {
+				return err
+			}
+		}
+	}
 	return nil
 }

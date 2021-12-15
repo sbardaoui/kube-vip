@@ -23,6 +23,8 @@ func init() {
 	kubeVipSampleConfig.Flags().BoolVar(&cliConfig.SingleNode, "singleNode", false, "Start this instance as a single node")
 	kubeVipSampleConfig.Flags().BoolVar(&cliConfig.StartAsLeader, "startAsLeader", false, "Start this instance as the cluster leader")
 	kubeVipSampleConfig.Flags().BoolVar(&cliConfig.EnableARP, "arp", true, "Use ARP broadcasts to improve VIP re-allocations")
+	kubeVipSampleConfig.Flags().StringVar(&cliConfig.BackendCIDR, "backendCidr", "0.0.0.0/0", "The API server backend CIDR")
+	kubeVipSampleConfig.Flags().IntVar(&cliConfig.BackendPort, "backendPort", 6443, "The API server backend port")
 	kubeVipSampleConfig.Flags().StringVar(&cliLocalPeer, "localPeer", "server1:192.168.0.1:10000", "Settings for this peer, format: id:address:port")
 	kubeVipSampleConfig.Flags().StringSliceVar(&cliRemotePeers, "remotePeers", []string{"server2:192.168.0.2:10000", "server3:192.168.0.3:10000"}, "Comma separated remotePeers, format: id:address:port")
 	// Load Balancer flags

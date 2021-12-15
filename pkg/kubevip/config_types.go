@@ -48,6 +48,12 @@ type Config struct {
 	// Listen port for the VirtualIP
 	Port int `yaml:"port"`
 
+	// The API server backend CIDR (default to 0.0.0.0/0)
+	BackendCIDR string `yaml:"backendCidr"`
+
+	// The API server backend port (default to 6443)
+	BackendPort int `yaml:"backendPort"`
+
 	// Namespace will define which namespace the control plane pods will run in
 	Namespace string `yaml:"namespace"`
 
