@@ -49,7 +49,7 @@ func (f *forwarder) Start(ctx context.Context) error {
 	if f.ipvs {
 		return startIPVS(f.srcAddress, f.srcPort, f.dstAddress, f.dstPort, f.ipvsForwardingMethod)
 	}
-	startIPTables(ctx, f.srcAddress, f.srcPort, f.dstAddress, f.dstPort)
+	startNFTables(ctx, f.srcAddress, f.srcPort, f.dstAddress, f.dstPort)
 	return nil
 }
 
@@ -61,5 +61,5 @@ func (f *forwarder) Stop() error {
 	if f.ipvs {
 		return stopIPVS(f.srcAddress, f.srcPort, f.dstAddress, f.dstPort, f.ipvsForwardingMethod)
 	}
-	return stopIPTables(f.srcAddress, f.srcPort, f.dstAddress, f.dstPort)
+	return stopNFTables(f.srcAddress, f.srcPort, f.dstAddress, f.dstPort)
 }
