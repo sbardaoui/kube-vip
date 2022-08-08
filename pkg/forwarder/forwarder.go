@@ -50,6 +50,7 @@ func (f *forwarder) Start(ctx context.Context) error {
 		return startIPVS(f.srcAddress, f.srcPort, f.dstAddress, f.dstPort, f.ipvsForwardingMethod)
 	}
 	startNFTables(ctx, f.srcAddress, f.srcPort, f.dstAddress, f.dstPort)
+	return nil
 }
 
 func (f *forwarder) Stop() error {

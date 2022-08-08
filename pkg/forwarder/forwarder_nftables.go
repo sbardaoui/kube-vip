@@ -25,7 +25,7 @@ func startNFTables(ctx context.Context, srcAddress string, srcPort int, destAddr
 			c := &nftables.Conn{}
 			t, err := c.ListTables()
 			if err != nil {
-				log.Errorf(err)
+				log.Errorf("error at listing tables")
 			}
 			for _, elem := range t {
 				if elem.Name == "KUBE-VIP" {
