@@ -122,7 +122,7 @@ func ForwardRules(srcAddress string, srcPort int, destAddress string, destPort i
 			&expr.Cmp{
 				Op:       expr.CmpOpEq,
 				Register: 1,
-				Data:     net.ParseIP(srcAddress).To4(),
+				Data:     net.ParseIP(destAddress).To4(),
 			},
 			//meta load l4proto => reg 1
 			&expr.Meta{Key: expr.MetaKeyL4PROTO, Register: 1},
@@ -144,19 +144,19 @@ func ForwardRules(srcAddress string, srcPort int, destAddress string, destPort i
 			&expr.Cmp{
 				Op:       expr.CmpOpEq,
 				Register: 1,
-				Data:     binaryutil.BigEndian.PutUint16(uint16(srcPort)),
+				Data:     binaryutil.BigEndian.PutUint16(uint16(destPort)),
 			},
 
 			//immediate reg 1 0x0202a8c0
 			&expr.Immediate{
 				Register: 1,
-				Data:     net.ParseIP(destAddress).To4(),
+				Data:     net.ParseIP(srcAddress).To4(),
 			},
 
 			//immediate reg 2 0x00005000
 			&expr.Immediate{
 				Register: 2,
-				Data:     binaryutil.BigEndian.PutUint16(uint16(destPort)),
+				Data:     binaryutil.BigEndian.PutUint16(uint16(srcPort)),
 			},
 			//nat dnat ip addr_min reg 1 proto_min reg 2
 			&expr.NAT{
@@ -189,7 +189,7 @@ func ForwardRules(srcAddress string, srcPort int, destAddress string, destPort i
 			&expr.Cmp{
 				Op:       expr.CmpOpEq,
 				Register: 1,
-				Data:     net.ParseIP(destAddress).To4(),
+				Data:     net.ParseIP(srcAddress).To4(),
 			},
 			// meta load l4proto => reg 1
 			&expr.Meta{Key: expr.MetaKeyL4PROTO, Register: 1},
@@ -210,7 +210,7 @@ func ForwardRules(srcAddress string, srcPort int, destAddress string, destPort i
 			&expr.Cmp{
 				Op:       expr.CmpOpEq,
 				Register: 1,
-				Data:     binaryutil.BigEndian.PutUint16(uint16(destPort)),
+				Data:     binaryutil.BigEndian.PutUint16(uint16(srcPort)),
 			},
 			//masq
 			&expr.Masq{Random: true},
@@ -237,7 +237,7 @@ func ForwardRules(srcAddress string, srcPort int, destAddress string, destPort i
 			&expr.Cmp{
 				Op:       expr.CmpOpEq,
 				Register: 1,
-				Data:     net.ParseIP(srcAddress).To4(),
+				Data:     net.ParseIP(destAddress).To4(),
 			},
 			//meta load l4proto => reg 1
 			&expr.Meta{Key: expr.MetaKeyL4PROTO, Register: 1},
@@ -258,19 +258,19 @@ func ForwardRules(srcAddress string, srcPort int, destAddress string, destPort i
 			&expr.Cmp{
 				Op:       expr.CmpOpEq,
 				Register: 1,
-				Data:     binaryutil.BigEndian.PutUint16(uint16(srcPort)),
+				Data:     binaryutil.BigEndian.PutUint16(uint16(destPort)),
 			},
 
 			//immediate reg 1 0x0202a8c0
 			&expr.Immediate{
 				Register: 1,
-				Data:     net.ParseIP(destAddress).To4(),
+				Data:     net.ParseIP(srcAddress).To4(),
 			},
 
 			//immediate reg 2 0x00005000
 			&expr.Immediate{
 				Register: 2,
-				Data:     binaryutil.BigEndian.PutUint16(uint16(destPort)),
+				Data:     binaryutil.BigEndian.PutUint16(uint16(srcPort)),
 			},
 			//nat dnat ip addr_min reg 1 proto_min reg 2
 			&expr.NAT{
