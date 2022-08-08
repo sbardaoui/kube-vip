@@ -34,6 +34,7 @@ func startNFTables(ctx context.Context, srcAddress string, srcPort int, destAddr
 					if err != nil {
 						log.Errorf("failed to tear down table")
 					}
+					return
 
 				}
 			}
@@ -44,6 +45,7 @@ func startNFTables(ctx context.Context, srcAddress string, srcPort int, destAddr
 				log.Infoln("failed at forward rules")
 			}
 			c.Flush()
+			return
 		}
 	}
 }
