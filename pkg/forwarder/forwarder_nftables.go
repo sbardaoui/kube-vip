@@ -12,7 +12,7 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-func startNFTables(ctx context.Context, srcAddress string, srcPort int, destAddress string, destPort int) error {
+func startNFTables(ctx context.Context, srcAddress string, srcPort int, destAddress string, destPort int) {
 	//TODO adding support for ipv6
 	if strings.Contains(srcAddress, ":") {
 		log.Fatal("IPV6 forwarding isn't yet supported. Feel free to contribute.")
@@ -25,7 +25,7 @@ func startNFTables(ctx context.Context, srcAddress string, srcPort int, destAddr
 			c := &nftables.Conn{}
 			t, err := c.ListTables()
 			if err != nil {
-				return err
+				log.Errorf(err)
 			}
 			for _, elem := range t {
 				if elem.Name == "KUBE-VIP" {
@@ -37,15 +37,13 @@ func startNFTables(ctx context.Context, srcAddress string, srcPort int, destAddr
 
 				}
 			}
-			return nil
 		default:
 			//creating the connection
 			c, err := ForwardRules(srcAddress, srcPort, destAddress, destPort)
 			if err != nil {
 				log.Infoln("failed at forward rules")
-				return err
 			}
-			return c.Flush()
+			c.Flush()
 		}
 	}
 }
@@ -122,7 +120,7 @@ func ForwardRules(srcAddress string, srcPort int, destAddress string, destPort i
 			&expr.Cmp{
 				Op:       expr.CmpOpEq,
 				Register: 1,
-				Data:     net.ParseIP(destAddress).To4(),
+				Data:     net.ParseIP(srcAddress).To4(),
 			},
 			//meta load l4proto => reg 1
 			&expr.Meta{Key: expr.MetaKeyL4PROTO, Register: 1},
@@ -144,19 +142,19 @@ func ForwardRules(srcAddress string, srcPort int, destAddress string, destPort i
 			&expr.Cmp{
 				Op:       expr.CmpOpEq,
 				Register: 1,
-				Data:     binaryutil.BigEndian.PutUint16(uint16(destPort)),
+				Data:     binaryutil.BigEndian.PutUint16(uint16(srcPort)),
 			},
 
 			//immediate reg 1 0x0202a8c0
 			&expr.Immediate{
 				Register: 1,
-				Data:     net.ParseIP(srcAddress).To4(),
+				Data:     net.ParseIP(destAddress).To4(),
 			},
 
 			//immediate reg 2 0x00005000
 			&expr.Immediate{
 				Register: 2,
-				Data:     binaryutil.BigEndian.PutUint16(uint16(srcPort)),
+				Data:     binaryutil.BigEndian.PutUint16(uint16(destPort)),
 			},
 			//nat dnat ip addr_min reg 1 proto_min reg 2
 			&expr.NAT{
@@ -189,7 +187,7 @@ func ForwardRules(srcAddress string, srcPort int, destAddress string, destPort i
 			&expr.Cmp{
 				Op:       expr.CmpOpEq,
 				Register: 1,
-				Data:     net.ParseIP(srcAddress).To4(),
+				Data:     net.ParseIP(destAddress).To4(),
 			},
 			// meta load l4proto => reg 1
 			&expr.Meta{Key: expr.MetaKeyL4PROTO, Register: 1},
@@ -210,7 +208,7 @@ func ForwardRules(srcAddress string, srcPort int, destAddress string, destPort i
 			&expr.Cmp{
 				Op:       expr.CmpOpEq,
 				Register: 1,
-				Data:     binaryutil.BigEndian.PutUint16(uint16(srcPort)),
+				Data:     binaryutil.BigEndian.PutUint16(uint16(destPort)),
 			},
 			//masq
 			&expr.Masq{Random: true},
@@ -237,7 +235,7 @@ func ForwardRules(srcAddress string, srcPort int, destAddress string, destPort i
 			&expr.Cmp{
 				Op:       expr.CmpOpEq,
 				Register: 1,
-				Data:     net.ParseIP(destAddress).To4(),
+				Data:     net.ParseIP(srcAddress).To4(),
 			},
 			//meta load l4proto => reg 1
 			&expr.Meta{Key: expr.MetaKeyL4PROTO, Register: 1},
@@ -258,19 +256,19 @@ func ForwardRules(srcAddress string, srcPort int, destAddress string, destPort i
 			&expr.Cmp{
 				Op:       expr.CmpOpEq,
 				Register: 1,
-				Data:     binaryutil.BigEndian.PutUint16(uint16(destPort)),
+				Data:     binaryutil.BigEndian.PutUint16(uint16(srcPort)),
 			},
 
 			//immediate reg 1 0x0202a8c0
 			&expr.Immediate{
 				Register: 1,
-				Data:     net.ParseIP(srcAddress).To4(),
+				Data:     net.ParseIP(destAddress).To4(),
 			},
 
 			//immediate reg 2 0x00005000
 			&expr.Immediate{
 				Register: 2,
-				Data:     binaryutil.BigEndian.PutUint16(uint16(srcPort)),
+				Data:     binaryutil.BigEndian.PutUint16(uint16(destPort)),
 			},
 			//nat dnat ip addr_min reg 1 proto_min reg 2
 			&expr.NAT{
